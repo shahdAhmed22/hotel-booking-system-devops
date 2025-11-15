@@ -67,10 +67,6 @@ module "eks" {
 
   cluster_endpoint_public_access = true
 
-  # IMPORTANT: Disable creating kubernetes provider resources
-  create_aws_auth_configmap = false
-  manage_aws_auth_configmap = false
-
   eks_managed_node_groups = {
     general = {
       desired_size = var.desired_node_count
