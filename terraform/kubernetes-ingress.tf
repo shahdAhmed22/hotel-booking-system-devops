@@ -21,7 +21,21 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = "aws-load-balancer-controller"
   }
 
-  depends_on = [module.eks]
+  # Add timeout and wait
+  timeout = 600
+  wait    = true
+
+  depends_on = [
+    module.eks,
+    kubernetes_namespace.app,
+    time_sleep.wait_for_cluster
+  ]
+}
+
+# Wait for ALB controller to be ready
+resource "time_sleep" "wait_for_alb_controller" {
+  create_duration = "30s"
+  depends_on = [helm_release.aws_load_balancer_controller]
 }
 
 # Ingress for the application
@@ -30,12 +44,10 @@ resource "kubernetes_ingress_v1" "app" {
     name      = "app-ingress"
     namespace = kubernetes_namespace.app.metadata[0].name
     annotations = {
-      "kubernetes.io/ingress.class"                    = "alb"
-      "alb.ingress.kubernetes.io/scheme"               = "internet-facing"
-      "alb.ingress.kubernetes.io/target-type"          = "ip"
-      "alb.ingress.kubernetes.io/healthcheck-path"     = "/"
-      "alb.ingress.kubernetes.io/healthcheck-protocol" = "HTTP"
-      "alb.ingress.kubernetes.io/listen-ports"         = "[{\"HTTP\": 80}]"
+      "kubernetes.io/ingress.class"                = "alb"
+      "alb.ingress.kubernetes.io/scheme"           = "internet-facing"
+      "alb.ingress.kubernetes.io/target-type"      = "ip"
+      "alb.ingress.kubernetes.io/listen-ports"     = "[{\"HTTP\": 80}]"
     }
   }
 
@@ -74,7 +86,7 @@ resource "kubernetes_ingress_v1" "app" {
   }
 
   depends_on = [
-    helm_release.aws_load_balancer_controller,
+    time_sleep.wait_for_alb_controller,
     kubernetes_service.frontend,
     kubernetes_service.backend
   ]
