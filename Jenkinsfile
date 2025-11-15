@@ -85,33 +85,34 @@ stage('Terraform Plan') {
     }
 }
         
-        stage('Terraform Apply') {
-            when {
-                expression { params.PIPELINE_ACTION == 'terraform-apply' }
-            }
-            steps {
-                echo '🚀 Applying Terraform...'
-                input message: 'Approve deployment?', ok: 'Deploy'
-                dir('terraform') {
-                    withCredentials([
-                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
-                        string(credentialsId: 'mongodb-password', variable: 'MONGODB_PASSWORD'),
-                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET')
-                    ]) {
-                        bat '''
-                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-                            set TF_VAR_mongodb_root_password=%MONGODB_PASSWORD%
-                            set TF_VAR_jwt_secret=%JWT_SECRET%
-                            set TF_VAR_backend_image=marvelhelmy/hotel-server:latest
-                            set TF_VAR_frontend_image=marvelhelmy/hotel-client:latest
-                            terraform apply -auto-approve tfplan
-                        '''
-                    }
-                }
+stage('Terraform Apply') {
+    when {
+        expression { 
+            params.PIPELINE_ACTION == 'terraform-apply' ||
+            params.PIPELINE_ACTION == 'full-deploy'
+        }
+    }
+    steps {
+        echo '🚀 Applying Terraform changes automatically...'
+        echo '⚠️ WARNING: This will create AWS resources and incur costs!'
+        dir('terraform') {
+            withCredentials([
+                string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
+                string(credentialsId: 'mongodb-password', variable: 'MONGODB_PASSWORD'),
+                string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET')
+            ]) {
+                bat '''
+                    set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
+                    set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+                    set TF_VAR_mongodb_root_password=%MONGODB_PASSWORD%
+                    set TF_VAR_jwt_secret=%JWT_SECRET%
+                    terraform apply -auto-approve tfplan
+                '''
             }
         }
+    }
+}
         
         stage('Configure kubectl') {
             when {
