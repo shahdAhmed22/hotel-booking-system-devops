@@ -52,20 +52,21 @@ resource "kubernetes_ingress_v1" "app" {
     name      = "app-ingress"
     namespace = kubernetes_namespace.app.metadata[0].name
     annotations = {
-      "kubernetes.io/ingress.class"                = "alb"
       "alb.ingress.kubernetes.io/scheme"           = "internet-facing"
       "alb.ingress.kubernetes.io/target-type"      = "ip"
       "alb.ingress.kubernetes.io/listen-ports"     = "[{\"HTTP\": 80}]"
+      "alb.ingress.kubernetes.io/healthcheck-path" = "/"
     }
   }
-
+  
   spec {
+    ingress_class_name = "alb"
+    
     rule {
       http {
         path {
-          path      = "/api/*"
+          path      = "/api"      # Remove the /* wildcard
           path_type = "Prefix"
-
           backend {
             service {
               name = kubernetes_service.backend.metadata[0].name
@@ -75,11 +76,9 @@ resource "kubernetes_ingress_v1" "app" {
             }
           }
         }
-
         path {
-          path      = "/*"
+          path      = "/"         # Remove the /* wildcard
           path_type = "Prefix"
-
           backend {
             service {
               name = kubernetes_service.frontend.metadata[0].name
@@ -92,7 +91,7 @@ resource "kubernetes_ingress_v1" "app" {
       }
     }
   }
-
+  
   depends_on = [
     null_resource.wait_for_alb_controller,
     kubernetes_service.frontend,
