@@ -107,17 +107,16 @@ resource "null_resource" "configure_kubectl" {
   depends_on = [module.eks]
 }
 
-# Wait for cluster to be fully ready
+# Wait for cluster to be fully ready using PowerShell
 resource "null_resource" "wait_for_cluster" {
   provisioner "local-exec" {
-    command = "timeout /t 120 /nobreak"
-    interpreter = ["cmd", "/c"]
+    command = "powershell -Command \"Start-Sleep -Seconds 120\""
   }
 
   depends_on = [null_resource.configure_kubectl]
 }
 
-# Kubernetes provider - using exec for authentication (works better than token)
+# Kubernetes provider - using exec for authentication
 provider "kubernetes" {
   host                   = module.eks.cluster_endpoint
   cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
@@ -179,11 +178,9 @@ resource "aws_eks_addon" "ebs_csi_driver" {
 resource "null_resource" "wait_for_ebs_csi" {
   provisioner "local-exec" {
     command = <<-EOT
-      echo Waiting for EBS CSI driver to be ready...
-      timeout /t 180 /nobreak
-      kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-ebs-csi-driver -n kube-system --timeout=300s || echo CSI driver may still be starting
+      powershell -Command "Write-Host 'Waiting for EBS CSI driver to be ready...'; Start-Sleep -Seconds 180"
+      kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-ebs-csi-driver -n kube-system --timeout=300s
     EOT
-    interpreter = ["cmd", "/c"]
   }
 
   depends_on = [aws_eks_addon.ebs_csi_driver]
@@ -212,8 +209,7 @@ resource "kubernetes_storage_class" "ebs_sc" {
 # Wait after storage class creation
 resource "null_resource" "wait_for_storage_class" {
   provisioner "local-exec" {
-    command = "timeout /t 30 /nobreak"
-    interpreter = ["cmd", "/c"]
+    command = "powershell -Command \"Write-Host 'Waiting for storage class...'; Start-Sleep -Seconds 30\""
   }
 
   depends_on = [kubernetes_storage_class.ebs_sc]
