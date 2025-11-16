@@ -152,26 +152,6 @@ resource "aws_eks_addon" "ebs_csi_driver" {
   }
 }
 
-# EBS CSI Driver addon
-resource "aws_eks_addon" "ebs_csi_driver" {
-  cluster_name                = module.eks.cluster_name
-  addon_name                  = "aws-ebs-csi-driver"
-  addon_version               = "v1.25.0-eksbuild.1"
-  resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "OVERWRITE"
-  
-  depends_on = [
-    module.eks,
-    time_sleep.wait_for_cluster
-  ]
-  
-  timeouts {
-    create = "30m"
-    update = "30m"
-    delete = "20m"
-  }
-}
-
 # Wait LONGER for EBS CSI driver to be fully operational
 resource "time_sleep" "wait_for_ebs_csi" {
   create_duration = "180s"  # Increased to 3 minutes
