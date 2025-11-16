@@ -1,225 +1,151 @@
-terraform {
-  required_version = ">= 1.0"
-  
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-    kubernetes = {
-      source  = "hashicorp/kubernetes"
-      version = "~> 2.23"
-    }
-    helm = {
-      source  = "hashicorp/helm"
-      version = "~> 2.11"
-    }
-    null = {
-      source  = "hashicorp/null"
-      version = "~> 3.0"
-    }
+# MongoDB Secret
+resource "kubernetes_secret" "mongodb" {
+  metadata {
+    name      = "mongodb-secret"
+    namespace = kubernetes_namespace.app.metadata[0].name
   }
+
+  data = {
+    mongodb-root-password = base64encode(var.mongodb_root_password)
+  }
+
+  type = "Opaque"
 }
 
-provider "aws" {
-  region = var.aws_region
-}
-
-# VPC Module
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.0"
-
-  name = "${var.project_name}-vpc"
-  cidr = var.vpc_cidr
-
-  azs             = var.availability_zones
-  private_subnets = var.private_subnet_cidrs
-  public_subnets  = var.public_subnet_cidrs
-
-  enable_nat_gateway   = true
-  single_nat_gateway   = true
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  public_subnet_tags = {
-    "kubernetes.io/role/elb"                    = "1"
-    "kubernetes.io/cluster/${var.project_name}" = "shared"
+# MongoDB Deployment (NOT StatefulSet) - Fast, no persistent storage
+resource "kubernetes_deployment" "mongodb" {
+  metadata {
+    name      = "mongodb"
+    namespace = kubernetes_namespace.app.metadata[0].name
+    labels = {
+      app = "mongodb"
+    }
   }
 
-  private_subnet_tags = {
-    "kubernetes.io/role/internal-elb"           = "1"
-    "kubernetes.io/cluster/${var.project_name}" = "shared"
-  }
+  spec {
+    replicas = 1
 
-  tags = {
-    Environment = var.environment
-    Project     = var.project_name
-  }
-}
-
-# EKS Module
-module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.0"
-
-  cluster_name    = var.project_name
-  cluster_version = var.kubernetes_version
-
-  vpc_id     = module.vpc.vpc_id
-  subnet_ids = module.vpc.private_subnets
-
-  cluster_endpoint_public_access = true
-  enable_irsa = true
-  enable_cluster_creator_admin_permissions = true
-
-  eks_managed_node_groups = {
-    general = {
-      desired_size = var.desired_node_count
-      min_size     = var.min_node_count
-      max_size     = var.max_node_count
-
-      instance_types = var.node_instance_types
-      capacity_type  = "ON_DEMAND"
-
-      labels = {
-        role = "general"
-      }
-
-      tags = {
-        Environment = var.environment
+    selector {
+      match_labels = {
+        app = "mongodb"
       }
     }
-  }
 
-  tags = {
-    Environment = var.environment
-    Project     = var.project_name
-  }
-}
+    template {
+      metadata {
+        labels = {
+          app = "mongodb"
+        }
+      }
 
-# Configure kubectl immediately after cluster creation
-resource "null_resource" "configure_kubectl" {
-  provisioner "local-exec" {
-    command = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
-  }
+      spec {
+        container {
+          name  = "mongodb"
+          image = var.mongodb_image
 
-  depends_on = [module.eks]
-}
+          port {
+            container_port = 27017
+            name           = "mongodb"
+          }
 
-# Wait for cluster to be fully ready using PowerShell
-resource "null_resource" "wait_for_cluster" {
-  provisioner "local-exec" {
-    command = "powershell -Command \"Start-Sleep -Seconds 120\""
-  }
+          env {
+            name  = "MONGO_INITDB_ROOT_USERNAME"
+            value = "admin"
+          }
 
-  depends_on = [null_resource.configure_kubectl]
-}
+          env {
+            name = "MONGO_INITDB_ROOT_PASSWORD"
+            value_from {
+              secret_key_ref {
+                name = kubernetes_secret.mongodb.metadata[0].name
+                key  = "mongodb-root-password"
+              }
+            }
+          }
 
-# Kubernetes provider - using exec for authentication
-provider "kubernetes" {
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+          env {
+            name  = "MONGO_INITDB_DATABASE"
+            value = var.mongodb_database
+          }
 
-  exec {
-    api_version = "client.authentication.k8s.io/v1beta1"
-    command     = "aws"
-    args = [
-      "eks",
-      "get-token",
-      "--cluster-name",
-      module.eks.cluster_name,
-      "--region",
-      var.aws_region
-    ]
-  }
-}
+          # EmptyDir - fast, temporary storage
+          volume_mount {
+            name       = "mongodb-data"
+            mount_path = "/data/db"
+          }
 
-provider "helm" {
-  kubernetes {
-    host                   = module.eks.cluster_endpoint
-    cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
+          resources {
+            requests = {
+              memory = "512Mi"
+              cpu    = "250m"
+            }
+            limits = {
+              memory = "1Gi"
+              cpu    = "500m"
+            }
+          }
 
-    exec {
-      api_version = "client.authentication.k8s.io/v1beta1"
-      command     = "aws"
-      args = [
-        "eks",
-        "get-token",
-        "--cluster-name",
-        module.eks.cluster_name,
-        "--region",
-        var.aws_region
-      ]
+          liveness_probe {
+            tcp_socket {
+              port = 27017
+            }
+            initial_delay_seconds = 30
+            period_seconds        = 10
+          }
+
+          readiness_probe {
+            tcp_socket {
+              port = 27017
+            }
+            initial_delay_seconds = 10
+            period_seconds        = 5
+          }
+        }
+
+        # EmptyDir volume - data lost on pod restart, but INSTANT
+        volume {
+          name = "mongodb-data"
+          empty_dir {}
+        }
+      }
     }
   }
-}
 
-# EBS CSI Driver addon
-resource "aws_eks_addon" "ebs_csi_driver" {
-  cluster_name                = module.eks.cluster_name
-  addon_name                  = "aws-ebs-csi-driver"
-  resolve_conflicts_on_create = "OVERWRITE"
-  resolve_conflicts_on_update = "OVERWRITE"
-  
+  timeouts {
+    create = "10m"
+    update = "10m"
+    delete = "5m"
+  }
+
   depends_on = [
-    module.eks,
+    kubernetes_secret.mongodb,
     null_resource.wait_for_cluster
   ]
-  
-  timeouts {
-    create = "60m"
-    update = "30m"
-    delete = "20m"
-  }
 }
 
-# Wait for EBS CSI driver and verify
-resource "null_resource" "wait_for_ebs_csi" {
-  provisioner "local-exec" {
-    command = <<-EOT
-      powershell -Command "Write-Host 'Waiting for EBS CSI driver to be ready...'; Start-Sleep -Seconds 180"
-      kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-ebs-csi-driver -n kube-system --timeout=300s
-    EOT
-  }
-
-  depends_on = [aws_eks_addon.ebs_csi_driver]
-}
-
-# Storage Class
-resource "kubernetes_storage_class" "ebs_sc" {
+# MongoDB Service
+resource "kubernetes_service" "mongodb" {
   metadata {
-    name = "ebs-sc"
+    name      = "mongodb"
+    namespace = kubernetes_namespace.app.metadata[0].name
+    labels = {
+      app = "mongodb"
+    }
   }
 
-  storage_provisioner = "ebs.csi.aws.com"
-  reclaim_policy      = "Retain"
-  volume_binding_mode = "WaitForFirstConsumer"
-  allow_volume_expansion = true
+  spec {
+    selector = {
+      app = "mongodb"
+    }
 
-  parameters = {
-    type      = "gp3"
-    encrypted = "true"
-    fsType    = "ext4"
+    port {
+      port        = 27017
+      target_port = 27017
+      protocol    = "TCP"
+    }
+
+    type = "ClusterIP"
   }
 
-  depends_on = [null_resource.wait_for_ebs_csi]
-}
-
-# Wait after storage class creation
-resource "null_resource" "wait_for_storage_class" {
-  provisioner "local-exec" {
-    command = "powershell -Command \"Write-Host 'Waiting for storage class...'; Start-Sleep -Seconds 30\""
-  }
-
-  depends_on = [kubernetes_storage_class.ebs_sc]
-}
-
-# Application namespace
-resource "kubernetes_namespace" "app" {
-  metadata {
-    name = var.app_namespace
-  }
-  
-  depends_on = [null_resource.wait_for_cluster]
+  depends_on = [kubernetes_deployment.mongodb]
 }
