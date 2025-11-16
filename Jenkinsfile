@@ -365,29 +365,59 @@ stage('Cleanup Existing Resources') {
             }
         }
         
-        stage('Verify Deployment') {
+stage('Verify Deployment') {
             when {
                 expression { 
-                    params.PIPELINE_ACTION == 'terraform-apply' ||
-                    params.PIPELINE_ACTION == 'terraform-clean-and-apply' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
+                    params.PIPELINE_ACTION == 'full-deploy' ||
+                    params.PIPELINE_ACTION == 'verify-only'
                 }
             }
             steps {
                 echo '🔍 Verifying Kubernetes deployment...'
-                bat '''
-                    echo === Cluster Nodes ===
-                    kubectl get nodes
-                    
-                    echo === Pods in hotel-app namespace ===
-                    kubectl get pods -n hotel-app
-                    
-                    echo === Services ===
-                    kubectl get svc -n hotel-app
-                    
-                    echo === Ingress ===
-                    kubectl get ingress -n hotel-app || echo No ingress found
-                '''
+                script {
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    ]) {
+                        bat '''
+                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
+                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+                            set AWS_DEFAULT_REGION=us-east-1
+                            
+                            REM Update kubeconfig
+                            echo Updating kubeconfig...
+                            aws eks update-kubeconfig --region us-east-1 --name mern-ecommerce
+                            
+                            echo.
+                            echo === Cluster Nodes ===
+                            kubectl get nodes
+                            
+                            echo.
+                            echo === Namespaces ===
+                            kubectl get namespaces
+                            
+                            echo.
+                            echo === Pods in app-namespace ===
+                            kubectl get pods -n app-namespace
+                            
+                            echo.
+                            echo === Deployments ===
+                            kubectl get deployments -n app-namespace
+                            
+                            echo.
+                            echo === Services ===
+                            kubectl get svc -n app-namespace
+                            
+                            echo.
+                            echo === Pod Details ===
+                            kubectl describe pods -n app-namespace
+                            
+                            echo.
+                            echo === Recent Events ===
+                            kubectl get events -n app-namespace --sort-by=.lastTimestamp
+                        '''
+                    }
+                }
             }
         }
         
