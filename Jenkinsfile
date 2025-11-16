@@ -18,7 +18,7 @@ pipeline {
         IMAGE_TAG = "${BUILD_NUMBER}"
         
         // Frontend environment variables
-        VITE_BACKEND_URL = 'http://localhost:3000'
+        VITE_BACKEND_URL = ''
         VITE_CURRENCY = '$'
         CLERK_KEY = credentials('clerk-publishable-key')
         STRIPE_KEY = credentials('stripe-publishable-key')
