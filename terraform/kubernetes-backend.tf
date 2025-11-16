@@ -8,7 +8,7 @@ resource "kubernetes_config_map" "backend" {
   data = {
     NODE_ENV      = var.environment
     PORT          = "5000"
-    MONGODB_URI   = "mongodb://admin:${var.mongodb_root_password}@mongodb.${kubernetes_namespace.app.metadata[0].name}.svc.cluster.local:27017/${var.mongodb_database}?authSource=admin"
+    MONGODB_URI   = "mongodb://admin:${var.mongodb_root_password}@mongodb.${var.app_namespace}.svc.cluster.local:27017/${var.mongodb_database}?authSource=admin"
     DATABASE_NAME = var.mongodb_database
   }
 
@@ -27,13 +27,16 @@ resource "kubernetes_secret" "backend" {
   }
 
   type = "Opaque"
+
+  depends_on = [kubernetes_namespace.app]
 }
 
-# Backend Deployment
+# Backend Deployment with explicit metadata
 resource "kubernetes_deployment" "backend" {
   metadata {
     name      = "backend"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
+
     labels = {
       app = "backend"
     }
@@ -41,6 +44,14 @@ resource "kubernetes_deployment" "backend" {
 
   spec {
     replicas = var.backend_replicas
+
+    strategy {
+      type = "RollingUpdate"
+      rolling_update {
+        max_surge       = 1
+        max_unavailable = 0
+      }
+    }
 
     selector {
       match_labels = {
@@ -63,7 +74,7 @@ resource "kubernetes_deployment" "backend" {
           command = [
             "sh",
             "-c",
-            "until nc -z mongodb.${kubernetes_namespace.app.metadata[0].name}.svc.cluster.local 27017; do echo waiting for mongodb; sleep 5; done; echo mongodb is ready"
+            "until nc -z mongodb.${var.app_namespace}.svc.cluster.local 27017; do echo waiting for mongodb; sleep 5; done; echo mongodb is ready"
           ]
         }
 
@@ -75,6 +86,7 @@ resource "kubernetes_deployment" "backend" {
           port {
             container_port = 5000
             name           = "http"
+            protocol       = "TCP"
           }
 
           env {
@@ -138,7 +150,6 @@ resource "kubernetes_deployment" "backend" {
             }
           }
 
-          # Use TCP probe instead of HTTP if /health endpoint doesn't exist
           liveness_probe {
             tcp_socket {
               port = 5000
@@ -159,6 +170,8 @@ resource "kubernetes_deployment" "backend" {
             failure_threshold     = 3
           }
         }
+
+        restart_policy = "Always"
       }
     }
   }
@@ -169,18 +182,28 @@ resource "kubernetes_deployment" "backend" {
     delete = "5m"
   }
 
+  wait_for_rollout = false
+
   depends_on = [
     kubernetes_service.mongodb,
     kubernetes_config_map.backend,
     kubernetes_secret.backend
   ]
+
+  lifecycle {
+    ignore_changes = [
+      metadata[0].annotations,
+      spec[0].template[0].metadata[0].annotations
+    ]
+  }
 }
 
 # Backend Service
 resource "kubernetes_service" "backend" {
   metadata {
     name      = "backend"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
+
     labels = {
       app = "backend"
     }
