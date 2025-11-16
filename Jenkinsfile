@@ -268,34 +268,38 @@ pipeline {
         
 
 stage('Cleanup Existing Resources') {
-            when {
-                expression { 
-                    params.PIPELINE_ACTION == 'terraform-clean-and-apply' ||
-                    params.PIPELINE_ACTION == 'full-deploy'
-                }
-            }
             steps {
                 echo '🧹 Cleaning up existing Kubernetes resources...'
                 script {
                     try {
-                        withCredentials([
-                            string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                            string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                        ]) {
-                            bat '''
-                                set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                                set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+                        dir('terraform') {
+                            withCredentials([
+                                string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                                string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                            ]) {
+                                // Get cluster name from terraform output or set it directly
+                                def clusterName = "taskmanager-app" // Change this to match your cluster name
+                                def region = "us-east-1" // Change this to match your region
+                                def namespace = "app-namespace" // Change this to match your namespace
                                 
-                                REM Update kubeconfig
-                                aws eks update-kubeconfig --region us-east-1 --name your-cluster-name
-                                
-                                REM Delete deployments if they exist
-                                kubectl delete deployment backend -n app-namespace --ignore-not-found=true
-                                kubectl delete deployment frontend -n app-namespace --ignore-not-found=true
-                                
-                                REM Wait a moment for cleanup
-                                timeout /t 10
-                            '''
+                                bat """
+                                    set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
+                                    set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+                                    
+                                    REM Update kubeconfig
+                                    aws eks update-kubeconfig --region ${region} --name ${clusterName}
+                                    
+                                    REM Delete deployments if they exist
+                                    kubectl delete deployment backend -n ${namespace} --ignore-not-found=true
+                                    kubectl delete deployment frontend -n ${namespace} --ignore-not-found=true
+                                    
+                                    REM Wait for cleanup
+                                    timeout /t 15
+                                    
+                                    REM Verify cleanup
+                                    kubectl get deployments -n ${namespace}
+                                """
+                            }
                         }
                     } catch (Exception e) {
                         echo "⚠️ Warning: Cleanup encountered an error: ${e.message}"
