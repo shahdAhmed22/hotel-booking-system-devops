@@ -14,9 +14,9 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 2.11"
     }
-    time = {
-      source  = "hashicorp/time"
-      version = "~> 0.9"
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.0"
     }
   }
 }
@@ -58,7 +58,7 @@ module "vpc" {
   }
 }
 
-# EKS Module - Simplified without duplicate access entries
+# EKS Module
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.0"
@@ -71,8 +71,6 @@ module "eks" {
 
   cluster_endpoint_public_access = true
   enable_irsa = true
-
-  # This single setting grants the cluster creator full admin access
   enable_cluster_creator_admin_permissions = true
 
   eks_managed_node_groups = {
@@ -100,24 +98,37 @@ module "eks" {
   }
 }
 
-# Wait for cluster to be fully ready
-resource "time_sleep" "wait_for_cluster" {
-  create_duration = "60s"
+# Configure kubectl immediately after cluster creation
+resource "null_resource" "configure_kubectl" {
+  provisioner "local-exec" {
+    command = "aws eks update-kubeconfig --region ${var.aws_region} --name ${module.eks.cluster_name}"
+  }
+
   depends_on = [module.eks]
 }
 
-# Data sources
+# Wait for cluster to be fully ready
+resource "null_resource" "wait_for_cluster" {
+  provisioner "local-exec" {
+    command = "timeout /t 120 /nobreak"
+    interpreter = ["cmd", "/c"]
+  }
+
+  depends_on = [null_resource.configure_kubectl]
+}
+
+# Get cluster info AFTER kubectl is configured
 data "aws_eks_cluster" "cluster" {
   name = module.eks.cluster_name
-  depends_on = [time_sleep.wait_for_cluster]
+  depends_on = [null_resource.wait_for_cluster]
 }
 
 data "aws_eks_cluster_auth" "cluster" {
   name = module.eks.cluster_name
-  depends_on = [time_sleep.wait_for_cluster]
+  depends_on = [null_resource.wait_for_cluster]
 }
 
-# Kubernetes provider
+# Kubernetes provider - configured after kubectl setup
 provider "kubernetes" {
   host                   = data.aws_eks_cluster.cluster.endpoint
   cluster_ca_certificate = base64decode(data.aws_eks_cluster.cluster.certificate_authority[0].data)
@@ -136,13 +147,12 @@ provider "helm" {
 resource "aws_eks_addon" "ebs_csi_driver" {
   cluster_name                = module.eks.cluster_name
   addon_name                  = "aws-ebs-csi-driver"
-  addon_version               = "v1.25.0-eksbuild.1"
   resolve_conflicts_on_create = "OVERWRITE"
   resolve_conflicts_on_update = "OVERWRITE"
   
   depends_on = [
     module.eks,
-    time_sleep.wait_for_cluster
+    null_resource.wait_for_cluster
   ]
   
   timeouts {
@@ -152,9 +162,17 @@ resource "aws_eks_addon" "ebs_csi_driver" {
   }
 }
 
-# Wait LONGER for EBS CSI driver to be fully operational
-resource "time_sleep" "wait_for_ebs_csi" {
-  create_duration = "180s"  # Increased to 3 minutes
+# Wait for EBS CSI driver and verify
+resource "null_resource" "wait_for_ebs_csi" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      echo Waiting for EBS CSI driver to be ready...
+      timeout /t 180 /nobreak
+      kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=aws-ebs-csi-driver -n kube-system --timeout=300s || echo CSI driver may still be starting
+    EOT
+    interpreter = ["cmd", "/c"]
+  }
+
   depends_on = [aws_eks_addon.ebs_csi_driver]
 }
 
@@ -175,12 +193,16 @@ resource "kubernetes_storage_class" "ebs_sc" {
     fsType    = "ext4"
   }
 
-  depends_on = [time_sleep.wait_for_ebs_csi]
+  depends_on = [null_resource.wait_for_ebs_csi]
 }
 
-# Wait for storage class to be ready
-resource "time_sleep" "wait_for_storage_class" {
-  create_duration = "30s"
+# Wait after storage class creation
+resource "null_resource" "wait_for_storage_class" {
+  provisioner "local-exec" {
+    command = "timeout /t 30 /nobreak"
+    interpreter = ["cmd", "/c"]
+  }
+
   depends_on = [kubernetes_storage_class.ebs_sc]
 }
 
@@ -190,5 +212,5 @@ resource "kubernetes_namespace" "app" {
     name = var.app_namespace
   }
   
-  depends_on = [time_sleep.wait_for_cluster]
+  depends_on = [null_resource.wait_for_cluster]
 }
