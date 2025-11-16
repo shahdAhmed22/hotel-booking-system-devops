@@ -21,8 +21,8 @@ app_namespace = "mern-app"
 
 # Docker Images from Docker Hub
 # IMPORTANT: Replace with your actual Docker Hub username and image names
-backend_image = "your-dockerhub-username/ecommerce-backend:latest"
-frontend_image = "your-dockerhub-username/ecommerce-frontend:latest"
+backend_image = "marvelhelmy/ecommerce-backend:latest"
+frontend_image = "marvelhelmy/ecommerce-frontend:latest"
 mongodb_image = "mongo:7.0"
 
 # Application Settings
