@@ -56,16 +56,16 @@ resource "kubernetes_deployment" "frontend" {
             }
           }
           
-          resources {
-            requests = {
-              memory = "128Mi"
-              cpu    = "100m"
-            }
-            limits = {
-              memory = "256Mi"
-              cpu    = "300m"
-            }
-          }
+resources {
+  requests = {
+    memory = "64Mi"   # Changed from 128Mi
+    cpu    = "50m"    # Changed from 100m
+  }
+  limits = {
+    memory = "128Mi"  # Changed from 256Mi
+    cpu    = "150m"   # Changed from 300m
+  }
+}
         }
       }
     }
