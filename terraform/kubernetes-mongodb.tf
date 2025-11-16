@@ -12,8 +12,8 @@ resource "kubernetes_secret" "mongodb" {
   type = "Opaque"
 }
 
-# MongoDB StatefulSet - uses volume claim template (no separate PVC)
-resource "kubernetes_stateful_set" "mongodb" {
+# MongoDB Deployment (using EmptyDir - fast, no persistent storage)
+resource "kubernetes_deployment" "mongodb" {
   metadata {
     name      = "mongodb"
     namespace = kubernetes_namespace.app.metadata[0].name
@@ -23,8 +23,7 @@ resource "kubernetes_stateful_set" "mongodb" {
   }
 
   spec {
-    service_name = "mongodb"
-    replicas     = 1
+    replicas = 1
 
     selector {
       match_labels = {
@@ -86,55 +85,39 @@ resource "kubernetes_stateful_set" "mongodb" {
           }
 
           liveness_probe {
-            exec {
-              command = ["mongosh", "--eval", "db.adminCommand('ping')"]
-            }
-            initial_delay_seconds = 60
-            period_seconds        = 10
-            timeout_seconds       = 5
-            failure_threshold     = 6
-          }
-
-          readiness_probe {
-            exec {
-              command = ["mongosh", "--eval", "db.adminCommand('ping')"]
+            tcp_socket {
+              port = 27017
             }
             initial_delay_seconds = 30
             period_seconds        = 10
-            timeout_seconds       = 5
-            failure_threshold     = 6
+          }
+
+          readiness_probe {
+            tcp_socket {
+              port = 27017
+            }
+            initial_delay_seconds = 10
+            period_seconds        = 5
           }
         }
-      }
-    }
 
-    # Volume claim template - PVC created automatically by StatefulSet
-    volume_claim_template {
-      metadata {
-        name = "mongodb-data"
-      }
-      spec {
-        access_modes       = ["ReadWriteOnce"]
-        storage_class_name = kubernetes_storage_class.ebs_sc.metadata[0].name
-        resources {
-          requests = {
-            storage = "10Gi"
-          }
+        volume {
+          name = "mongodb-data"
+          empty_dir {}
         }
       }
     }
   }
 
   timeouts {
-    create = "60m"
-    update = "30m"
-    delete = "15m"
+    create = "10m"
+    update = "10m"
+    delete = "5m"
   }
 
   depends_on = [
-    kubernetes_storage_class.ebs_sc,
-    null_resource.wait_for_storage_class,
-    kubernetes_secret.mongodb
+    kubernetes_secret.mongodb,
+    null_resource.wait_for_cluster
   ]
 }
 
@@ -159,9 +142,8 @@ resource "kubernetes_service" "mongodb" {
       protocol    = "TCP"
     }
 
-    cluster_ip = "None"
-    type       = "ClusterIP"
+    type = "ClusterIP"
   }
 
-  depends_on = [kubernetes_stateful_set.mongodb]
+  depends_on = [kubernetes_deployment.mongodb]
 }
