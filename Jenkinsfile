@@ -287,9 +287,9 @@ pipeline {
                                 string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
                                 string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
                             ]) {
-                                def clusterName = "mern-ecommerce"
+                                def clusterName = "hotel-booking"
                                 def region = "us-east-1"
-                                def namespace = "mern-app"
+                                def namespace = "hotel-app"
                                 
                                 bat """
                                     set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
