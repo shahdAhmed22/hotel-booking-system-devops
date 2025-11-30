@@ -494,4 +494,107 @@ stage('Verify Deployment') {
             echo '❌❌❌ Pipeline FAILED! ❌❌❌'
         }
     }
+stage('Access Monitoring Dashboard') {
+    when {
+        expression { 
+            params.PIPELINE_ACTION == 'terraform-apply' ||
+            params.PIPELINE_ACTION == 'terraform-clean-and-apply' ||
+            params.PIPELINE_ACTION == 'full-deploy'
+        }
+    }
+    steps {
+        echo '📊 Setting up monitoring access...'
+        dir('terraform') {
+            withCredentials([
+                string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+            ]) {
+                bat '''
+                    set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
+                    set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+                    
+                    echo ====================================
+                    echo Monitoring Information:
+                    echo ====================================
+                    
+                    REM Wait for Grafana to be ready
+                    echo Waiting for Grafana LoadBalancer...
+                    timeout /t 60
+                    
+                    REM Get Grafana URL
+                    echo.
+                    echo Grafana Dashboard URL:
+                    kubectl get svc prometheus-grafana -n monitoring -o jsonpath="{.status.loadBalancer.ingress[0].hostname}"
+                    echo.
+                    
+                    echo.
+                    echo Grafana Login:
+                    echo Username: admin
+                    echo Password: [Set via grafana_admin_password variable]
+                    echo.
+                    
+                    echo Prometheus URL (Internal):
+                    echo http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+                    echo.
+                    
+                    echo ====================================
+                    echo Monitoring Pods Status:
+                    echo ====================================
+                    kubectl get pods -n monitoring
+                    
+                    echo.
+                    echo ====================================
+                    echo Access your dashboards at:
+                    echo ====================================
+                    echo 1. Kubernetes Cluster Overview
+                    echo 2. MERN Application Metrics
+                    echo 3. MongoDB Performance
+                    echo 4. Node Metrics
+                    echo 5. Pod Resource Usage
+                    echo ====================================
+                '''
+            }
+        }
+    }
 }
+
+stage('Verify Monitoring') {
+    when {
+        expression { 
+            params.PIPELINE_ACTION == 'full-deploy' ||
+            params.PIPELINE_ACTION == 'verify-monitoring'
+        }
+    }
+    steps {
+        echo '🔍 Verifying monitoring stack...'
+        script {
+            withCredentials([
+                string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+            ]) {
+                bat '''
+                    set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
+                    set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+                    
+                    echo Checking Prometheus...
+                    kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus
+                    
+                    echo.
+                    echo Checking Grafana...
+                    kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana
+                    
+                    echo.
+                    echo Checking AlertManager...
+                    kubectl get pods -n monitoring -l app.kubernetes.io/name=alertmanager
+                    
+                    echo.
+                    echo Checking ServiceMonitors...
+                    kubectl get servicemonitor -n mern-app
+                    
+                    echo.
+                    echo Checking PrometheusRules...
+                    kubectl get prometheusrule -n monitoring
+                '''
+            }
+        }
+    }
