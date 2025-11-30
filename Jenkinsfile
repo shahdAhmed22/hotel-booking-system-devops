@@ -52,13 +52,15 @@ pipeline {
                         string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
                         string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
                         string(credentialsId: 'mongodb-password', variable: 'MONGODB_PASSWORD'),
-                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET')
+                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
+                        string(credentialsId: 'grafana-admin-password', variable: 'GRAFANA_PASSWORD')
                     ]) {
                         bat '''
                             set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
                             set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
                             set TF_VAR_mongodb_root_password=%MONGODB_PASSWORD%
                             set TF_VAR_jwt_secret=%JWT_SECRET%
+                            set TF_VAR_grafana_admin_password=%GRAFANA_PASSWORD%
                             terraform destroy -auto-approve || echo "Destroy failed or nothing to destroy"
                         '''
                     }
@@ -252,22 +254,30 @@ pipeline {
                         string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
                         string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
                         string(credentialsId: 'mongodb-password', variable: 'MONGODB_PASSWORD'),
-                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET')
+                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
+                        string(credentialsId: 'grafana-admin-password', variable: 'GRAFANA_PASSWORD')
                     ]) {
                         bat '''
                             set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
                             set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
                             set TF_VAR_mongodb_root_password=%MONGODB_PASSWORD%
                             set TF_VAR_jwt_secret=%JWT_SECRET%
+                            set TF_VAR_grafana_admin_password=%GRAFANA_PASSWORD%
                             terraform plan -out=tfplan
                         '''
                     }
                 }
             }
         }
-        
 
-stage('Cleanup Existing Resources') {
+        stage('Cleanup Existing Resources') {
+            when {
+                expression { 
+                    params.PIPELINE_ACTION == 'terraform-apply' ||
+                    params.PIPELINE_ACTION == 'terraform-clean-and-apply' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
+                }
+            }
             steps {
                 echo '🧹 Cleaning up existing Kubernetes resources...'
                 script {
@@ -277,10 +287,9 @@ stage('Cleanup Existing Resources') {
                                 string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
                                 string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
                             ]) {
-                                // Get cluster name from terraform output or set it directly
-                                def clusterName = "mern-ecommerce" // Change this to match your cluster name
-                                def region = "us-east-1" // Change this to match your region
-                                def namespace = "mern-app" // Change this to match your namespace
+                                def clusterName = "mern-ecommerce"
+                                def region = "us-east-1"
+                                def namespace = "mern-app"
                                 
                                 bat """
                                     set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
@@ -325,19 +334,22 @@ stage('Cleanup Existing Resources') {
                         string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
                         string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY'),
                         string(credentialsId: 'mongodb-password', variable: 'MONGODB_PASSWORD'),
-                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET')
+                        string(credentialsId: 'jwt-secret', variable: 'JWT_SECRET'),
+                        string(credentialsId: 'grafana-admin-password', variable: 'GRAFANA_PASSWORD')
                     ]) {
                         bat '''
                             set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
                             set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
                             set TF_VAR_mongodb_root_password=%MONGODB_PASSWORD%
                             set TF_VAR_jwt_secret=%JWT_SECRET%
+                            set TF_VAR_grafana_admin_password=%GRAFANA_PASSWORD%
                             terraform apply -auto-approve tfplan
                         '''
                     }
                 }
             }
         }
+        
         stage('Configure kubectl') {
             when {
                 expression { 
@@ -365,11 +377,12 @@ stage('Cleanup Existing Resources') {
             }
         }
         
-stage('Verify Deployment') {
+        stage('Verify Deployment') {
             when {
                 expression { 
-                    params.PIPELINE_ACTION == 'full-deploy' ||
-                    params.PIPELINE_ACTION == 'verify-only'
+                    params.PIPELINE_ACTION == 'terraform-apply' ||
+                    params.PIPELINE_ACTION == 'terraform-clean-and-apply' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
                 }
             }
             steps {
@@ -397,24 +410,20 @@ stage('Verify Deployment') {
                             kubectl get namespaces
                             
                             echo.
-                            echo === Pods in app-namespace ===
-                            kubectl get pods -n app-namespace
+                            echo === Pods in mern-app ===
+                            kubectl get pods -n mern-app
                             
                             echo.
                             echo === Deployments ===
-                            kubectl get deployments -n app-namespace
+                            kubectl get deployments -n mern-app
                             
                             echo.
                             echo === Services ===
-                            kubectl get svc -n app-namespace
+                            kubectl get svc -n mern-app
                             
                             echo.
-                            echo === Pod Details ===
-                            kubectl describe pods -n app-namespace
-                            
-                            echo.
-                            echo === Recent Events ===
-                            kubectl get events -n app-namespace --sort-by=.lastTimestamp
+                            echo === Ingress ===
+                            kubectl get ingress -n mern-app
                         '''
                     }
                 }
@@ -449,6 +458,95 @@ stage('Verify Deployment') {
                 }
             }
         }
+        
+        stage('Access Monitoring Dashboard') {
+            when {
+                expression { 
+                    params.PIPELINE_ACTION == 'terraform-apply' ||
+                    params.PIPELINE_ACTION == 'terraform-clean-and-apply' ||
+                    params.PIPELINE_ACTION == 'full-deploy'
+                }
+            }
+            steps {
+                echo '📊 Setting up monitoring access...'
+                dir('terraform') {
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    ]) {
+                        bat '''
+                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
+                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+                            
+                            echo ====================================
+                            echo Monitoring Information:
+                            echo ====================================
+                            
+                            REM Wait for Grafana to be ready
+                            echo Waiting for Grafana LoadBalancer...
+                            timeout /t 60
+                            
+                            REM Get Grafana URL
+                            echo.
+                            echo Grafana Dashboard URL:
+                            kubectl get svc prometheus-grafana -n monitoring -o jsonpath="{.status.loadBalancer.ingress[0].hostname}" 2>nul || echo "Grafana service not ready yet"
+                            echo.
+                            
+                            echo.
+                            echo Grafana Login:
+                            echo Username: admin
+                            echo Password: [Set via grafana_admin_password variable]
+                            echo.
+                            
+                            echo ====================================
+                            echo Monitoring Pods Status:
+                            echo ====================================
+                            kubectl get pods -n monitoring 2>nul || echo "Monitoring namespace not ready yet"
+                            
+                            echo.
+                            echo ====================================
+                        '''
+                    }
+                }
+            }
+        }
+        
+        stage('Verify Monitoring') {
+            when {
+                expression { 
+                    params.PIPELINE_ACTION == 'full-deploy'
+                }
+            }
+            steps {
+                echo '🔍 Verifying monitoring stack...'
+                script {
+                    withCredentials([
+                        string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
+                        string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    ]) {
+                        bat '''
+                            set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
+                            set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
+                            
+                            echo Checking Prometheus...
+                            kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus 2>nul || echo "Prometheus not deployed"
+                            
+                            echo.
+                            echo Checking Grafana...
+                            kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana 2>nul || echo "Grafana not deployed"
+                            
+                            echo.
+                            echo Checking AlertManager...
+                            kubectl get pods -n monitoring -l app.kubernetes.io/name=alertmanager 2>nul || echo "AlertManager not deployed"
+                            
+                            echo.
+                            echo Checking ServiceMonitors...
+                            kubectl get servicemonitor -n mern-app 2>nul || echo "ServiceMonitors not deployed"
+                        '''
+                    }
+                }
+            }
+        }
     }
     
     post {
@@ -466,20 +564,19 @@ stage('Verify Deployment') {
                 echo "================================================"
                 
                 if (params.PIPELINE_ACTION == 'docker-only') {
-                    echo "📦 PHASE 3 COMPLETED - Docker Images Pushed"
+                    echo "📦 Docker Images Pushed"
                     echo "Client Image: ${CLIENT_IMAGE}:${IMAGE_TAG}"
                     echo "Server Image: ${SERVER_IMAGE}:${IMAGE_TAG}"
-                    echo "Images available on Docker Hub"
                 }
                 
                 if (params.PIPELINE_ACTION == 'terraform-plan') {
                     echo "📋 TERRAFORM PLAN COMPLETED"
-                    echo "Review the plan above"
                 }
                 
                 if (params.PIPELINE_ACTION == 'terraform-apply' || params.PIPELINE_ACTION == 'terraform-clean-and-apply' || params.PIPELINE_ACTION == 'full-deploy') {
                     echo "🎉 DEPLOYMENT SUCCESSFUL! 🎉"
-                    echo "Get LoadBalancer URL: kubectl get svc frontend -n hotel-app"
+                    echo "Get Application URL: kubectl get ingress -n mern-app"
+                    echo "Get Grafana URL: kubectl get svc prometheus-grafana -n monitoring"
                 }
                 
                 if (params.PIPELINE_ACTION == 'terraform-destroy') {
@@ -492,111 +589,7 @@ stage('Verify Deployment') {
         
         failure {
             echo '❌❌❌ Pipeline FAILED! ❌❌❌'
+            echo 'Check the console output above for error details'
         }
     }
-stage('Access Monitoring Dashboard') {
-    when {
-        expression { 
-            params.PIPELINE_ACTION == 'terraform-apply' ||
-            params.PIPELINE_ACTION == 'terraform-clean-and-apply' ||
-            params.PIPELINE_ACTION == 'full-deploy'
-        }
-    }
-    steps {
-        echo '📊 Setting up monitoring access...'
-        dir('terraform') {
-            withCredentials([
-                string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-            ]) {
-                bat '''
-                    set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                    set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-                    
-                    echo ====================================
-                    echo Monitoring Information:
-                    echo ====================================
-                    
-                    REM Wait for Grafana to be ready
-                    echo Waiting for Grafana LoadBalancer...
-                    timeout /t 60
-                    
-                    REM Get Grafana URL
-                    echo.
-                    echo Grafana Dashboard URL:
-                    kubectl get svc prometheus-grafana -n monitoring -o jsonpath="{.status.loadBalancer.ingress[0].hostname}"
-                    echo.
-                    
-                    echo.
-                    echo Grafana Login:
-                    echo Username: admin
-                    echo Password: [Set via grafana_admin_password variable]
-                    echo.
-                    
-                    echo Prometheus URL (Internal):
-                    echo http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
-                    echo.
-                    
-                    echo ====================================
-                    echo Monitoring Pods Status:
-                    echo ====================================
-                    kubectl get pods -n monitoring
-                    
-                    echo.
-                    echo ====================================
-                    echo Access your dashboards at:
-                    echo ====================================
-                    echo 1. Kubernetes Cluster Overview
-                    echo 2. MERN Application Metrics
-                    echo 3. MongoDB Performance
-                    echo 4. Node Metrics
-                    echo 5. Pod Resource Usage
-                    echo ====================================
-                '''
-            }
-        }
-    }
-}
-
-stage('Verify Monitoring') {
-    when {
-        expression { 
-            params.PIPELINE_ACTION == 'full-deploy' ||
-            params.PIPELINE_ACTION == 'verify-monitoring'
-        }
-    }
-    steps {
-        echo '🔍 Verifying monitoring stack...'
-        script {
-            withCredentials([
-                string(credentialsId: 'aws-access-key-id', variable: 'AWS_ACCESS_KEY_ID'),
-                string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-            ]) {
-                bat '''
-                    set AWS_ACCESS_KEY_ID=%AWS_ACCESS_KEY_ID%
-                    set AWS_SECRET_ACCESS_KEY=%AWS_SECRET_ACCESS_KEY%
-                    
-                    echo Checking Prometheus...
-                    kubectl get pods -n monitoring -l app.kubernetes.io/name=prometheus
-                    
-                    echo.
-                    echo Checking Grafana...
-                    kubectl get pods -n monitoring -l app.kubernetes.io/name=grafana
-                    
-                    echo.
-                    echo Checking AlertManager...
-                    kubectl get pods -n monitoring -l app.kubernetes.io/name=alertmanager
-                    
-                    echo.
-                    echo Checking ServiceMonitors...
-                    kubectl get servicemonitor -n mern-app
-                    
-                    echo.
-                    echo Checking PrometheusRules...
-                    kubectl get prometheusrule -n monitoring
-                '''
-            }
-        }
-    }
-}
 }
