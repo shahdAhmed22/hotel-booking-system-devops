@@ -111,3 +111,8 @@ variable "frontend_replicas" {
   type    = number
   default = 2
 }
+
+variable "grafana_admin_password" {
+  type      = string
+  sensitive = true
+}
