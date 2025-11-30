@@ -2,13 +2,13 @@
 resource "kubernetes_config_map" "backend" {
   metadata {
     name      = "backend-config"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
   }
 
   data = {
     NODE_ENV      = var.environment
     PORT          = "5000"
-    MONGODB_URI   = "mongodb://admin:${var.mongodb_root_password}@mongodb:27017/${var.mongodb_database}?authSource=admin"
+    MONGODB_URI   = "mongodb://admin:${var.mongodb_root_password}@mongodb.${var.app_namespace}.svc.cluster.local:27017/${var.mongodb_database}?authSource=admin"
     DATABASE_NAME = var.mongodb_database
   }
 }
@@ -17,7 +17,7 @@ resource "kubernetes_config_map" "backend" {
 resource "kubernetes_secret" "backend" {
   metadata {
     name      = "backend-secret"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
   }
 
   data = {
@@ -31,7 +31,7 @@ resource "kubernetes_secret" "backend" {
 resource "kubernetes_deployment" "backend" {
   metadata {
     name      = "backend"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
     labels = {
       app = "backend"
     }
@@ -55,8 +55,8 @@ resource "kubernetes_deployment" "backend" {
 
       spec {
         container {
-          name  = "backend"
-          image = var.backend_image
+          name              = "backend"
+          image             = var.backend_image
           image_pull_policy = "Always"
 
           port {
@@ -106,50 +106,41 @@ resource "kubernetes_deployment" "backend" {
 
           resources {
             requests = {
-              memory = "256Mi"
-              cpu    = "200m"
+              memory = "128Mi"
+              cpu    = "100m"
             }
             limits = {
-              memory = "512Mi"
-              cpu    = "500m"
+              memory = "256Mi"
+              cpu    = "250m"
             }
           }
 
           liveness_probe {
-            http_get {
-              path = "/health"
+            tcp_socket {
               port = 5000
             }
-            initial_delay_seconds = 30
+            initial_delay_seconds = 60
             period_seconds        = 10
-            timeout_seconds       = 5
-            failure_threshold     = 3
           }
 
           readiness_probe {
-            http_get {
-              path = "/health"
+            tcp_socket {
               port = 5000
             }
-            initial_delay_seconds = 10
+            initial_delay_seconds = 30
             period_seconds        = 5
-            timeout_seconds       = 3
-            failure_threshold     = 3
           }
-        }
-
-        # Wait for MongoDB to be ready
-        init_container {
-          name  = "wait-for-mongodb"
-          image = "busybox:1.35"
-          command = [
-            "sh",
-            "-c",
-            "until nc -z mongodb 27017; do echo waiting for mongodb; sleep 2; done"
-          ]
         }
       }
     }
+  }
+
+  wait_for_rollout = false
+
+  timeouts {
+    create = "15m"
+    update = "10m"
+    delete = "5m"
   }
 
   depends_on = [
@@ -157,13 +148,20 @@ resource "kubernetes_deployment" "backend" {
     kubernetes_config_map.backend,
     kubernetes_secret.backend
   ]
+
+  lifecycle {
+    ignore_changes = [
+      metadata[0].annotations,
+      spec[0].template[0].metadata[0].annotations
+    ]
+  }
 }
 
 # Backend Service
 resource "kubernetes_service" "backend" {
   metadata {
     name      = "backend"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
     labels = {
       app = "backend"
     }

@@ -2,7 +2,7 @@
 resource "kubernetes_secret" "mongodb" {
   metadata {
     name      = "mongodb-secret"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
   }
 
   data = {
@@ -12,40 +12,18 @@ resource "kubernetes_secret" "mongodb" {
   type = "Opaque"
 }
 
-# MongoDB PersistentVolumeClaim
-resource "kubernetes_persistent_volume_claim" "mongodb" {
-  metadata {
-    name      = "mongodb-pvc"
-    namespace = kubernetes_namespace.app.metadata[0].name
-  }
-
-  spec {
-    access_modes       = ["ReadWriteOnce"]
-    storage_class_name = kubernetes_storage_class.ebs_sc.metadata[0].name
-
-    resources {
-      requests = {
-        storage = "10Gi"
-      }
-    }
-  }
-
-  depends_on = [kubernetes_storage_class.ebs_sc]
-}
-
-# MongoDB StatefulSet
-resource "kubernetes_stateful_set" "mongodb" {
+# MongoDB Deployment
+resource "kubernetes_deployment" "mongodb" {
   metadata {
     name      = "mongodb"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
     labels = {
       app = "mongodb"
     }
   }
 
   spec {
-    service_name = "mongodb"
-    replicas     = 1
+    replicas = 1
 
     selector {
       match_labels = {
@@ -71,7 +49,7 @@ resource "kubernetes_stateful_set" "mongodb" {
           }
 
           env {
-            name = "MONGO_INITDB_ROOT_USERNAME"
+            name  = "MONGO_INITDB_ROOT_USERNAME"
             value = "admin"
           }
 
@@ -97,54 +75,65 @@ resource "kubernetes_stateful_set" "mongodb" {
 
           resources {
             requests = {
-              memory = "512Mi"
-              cpu    = "250m"
+              memory = "256Mi"
+              cpu    = "100m"
             }
             limits = {
-              memory = "1Gi"
-              cpu    = "500m"
+              memory = "512Mi"
+              cpu    = "250m"
             }
           }
 
           liveness_probe {
-            exec {
-              command = ["mongosh", "--eval", "db.adminCommand('ping')"]
+            tcp_socket {
+              port = 27017
             }
             initial_delay_seconds = 30
             period_seconds        = 10
-            timeout_seconds       = 5
-            failure_threshold     = 3
           }
 
           readiness_probe {
-            exec {
-              command = ["mongosh", "--eval", "db.adminCommand('ping')"]
+            tcp_socket {
+              port = 27017
             }
             initial_delay_seconds = 10
             period_seconds        = 5
-            timeout_seconds       = 3
-            failure_threshold     = 3
           }
         }
 
         volume {
           name = "mongodb-data"
-          persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim.mongodb.metadata[0].name
-          }
+          empty_dir {}
         }
       }
     }
   }
 
-  depends_on = [kubernetes_persistent_volume_claim.mongodb]
+  wait_for_rollout = false
+
+  timeouts {
+    create = "10m"
+    update = "10m"
+    delete = "5m"
+  }
+
+  depends_on = [
+    kubernetes_secret.mongodb
+  ]
+
+  lifecycle {
+    ignore_changes = [
+      metadata[0].annotations,
+      spec[0].template[0].metadata[0].annotations
+    ]
+  }
 }
 
 # MongoDB Service
 resource "kubernetes_service" "mongodb" {
   metadata {
     name      = "mongodb"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
     labels = {
       app = "mongodb"
     }
@@ -161,9 +150,8 @@ resource "kubernetes_service" "mongodb" {
       protocol    = "TCP"
     }
 
-    cluster_ip = "None" # Headless service for StatefulSet
-    type       = "ClusterIP"
+    type = "ClusterIP"
   }
 
-  depends_on = [kubernetes_stateful_set.mongodb]
+  depends_on = [kubernetes_deployment.mongodb]
 }

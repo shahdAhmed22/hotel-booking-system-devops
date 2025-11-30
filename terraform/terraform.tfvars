@@ -11,8 +11,8 @@ public_subnet_cidrs = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 
 # EKS Configuration
 kubernetes_version = "1.28"
-node_instance_types = ["t3.medium"]
-desired_node_count = 2
+node_instance_types = ["t3.small"]
+desired_node_count = 2  # Keep 2 nodes
 min_node_count = 1
 max_node_count = 4
 
@@ -20,20 +20,11 @@ max_node_count = 4
 app_namespace = "mern-app"
 
 # Docker Images from Docker Hub
-# IMPORTANT: Replace with your actual Docker Hub username and image names
-backend_image = "your-dockerhub-username/ecommerce-backend:latest"
-frontend_image = "your-dockerhub-username/ecommerce-frontend:latest"
+backend_image = "marvelhelmy/hotel-server:latest"
+frontend_image = "marvelhelmy/hotel-client:latest"
 mongodb_image = "mongo:7.0"
 
 # Application Settings
 mongodb_database = "ecommerce"
-backend_replicas = 2
-frontend_replicas = 2
-
-# Sensitive variables - DO NOT COMMIT TO VERSION CONTROL
-# Set these via environment variables instead:
-# export TF_VAR_mongodb_root_password="your-secure-password"
-# export TF_VAR_jwt_secret="your-jwt-secret-key"
-# 
-# mongodb_root_password = "DO-NOT-SET-HERE"
-# jwt_secret = "DO-NOT-SET-HERE"
+backend_replicas = 1  # Changed from 2 to 1
+frontend_replicas = 1  # Changed from 2 to 1

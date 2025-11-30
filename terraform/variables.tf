@@ -49,7 +49,7 @@ variable "kubernetes_version" {
 variable "node_instance_types" {
   description = "Node instance types"
   type        = list(string)
-  default     = ["t3.medium"]
+  default     = ["t3.micro", "t3.small", "t2.micro"]
 }
 
 variable "desired_node_count" {

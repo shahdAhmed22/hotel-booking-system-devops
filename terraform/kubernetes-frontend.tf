@@ -2,11 +2,11 @@
 resource "kubernetes_config_map" "frontend" {
   metadata {
     name      = "frontend-config"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
   }
 
   data = {
-    REACT_APP_API_URL = "http://backend:5000/api"
+    REACT_APP_API_URL = "http://backend.${var.app_namespace}.svc.cluster.local:5000/api"
   }
 }
 
@@ -14,7 +14,7 @@ resource "kubernetes_config_map" "frontend" {
 resource "kubernetes_deployment" "frontend" {
   metadata {
     name      = "frontend"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
     labels = {
       app = "frontend"
     }
@@ -38,8 +38,8 @@ resource "kubernetes_deployment" "frontend" {
 
       spec {
         container {
-          name  = "frontend"
-          image = var.frontend_image
+          name              = "frontend"
+          image             = var.frontend_image
           image_pull_policy = "Always"
 
           port {
@@ -59,12 +59,12 @@ resource "kubernetes_deployment" "frontend" {
 
           resources {
             requests = {
-              memory = "128Mi"
-              cpu    = "100m"
+              memory = "64Mi"
+              cpu    = "50m"
             }
             limits = {
-              memory = "256Mi"
-              cpu    = "300m"
+              memory = "128Mi"
+              cpu    = "150m"
             }
           }
 
@@ -75,8 +75,6 @@ resource "kubernetes_deployment" "frontend" {
             }
             initial_delay_seconds = 30
             period_seconds        = 10
-            timeout_seconds       = 5
-            failure_threshold     = 3
           }
 
           readiness_probe {
@@ -84,38 +82,39 @@ resource "kubernetes_deployment" "frontend" {
               path = "/"
               port = 80
             }
-            initial_delay_seconds = 10
+            initial_delay_seconds = 15
             period_seconds        = 5
-            timeout_seconds       = 3
-            failure_threshold     = 3
           }
-        }
-
-        # Wait for backend to be ready
-        init_container {
-          name  = "wait-for-backend"
-          image = "busybox:1.35"
-          command = [
-            "sh",
-            "-c",
-            "until nc -z backend 5000; do echo waiting for backend; sleep 2; done"
-          ]
         }
       }
     }
   }
 
+  wait_for_rollout = false
+
+  timeouts {
+    create = "15m"
+    update = "10m"
+    delete = "5m"
+  }
+
   depends_on = [
-    kubernetes_service.backend,
     kubernetes_config_map.frontend
   ]
+
+  lifecycle {
+    ignore_changes = [
+      metadata[0].annotations,
+      spec[0].template[0].metadata[0].annotations
+    ]
+  }
 }
 
 # Frontend Service
 resource "kubernetes_service" "frontend" {
   metadata {
     name      = "frontend"
-    namespace = kubernetes_namespace.app.metadata[0].name
+    namespace = var.app_namespace
     labels = {
       app = "frontend"
     }
