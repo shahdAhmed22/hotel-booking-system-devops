@@ -17,7 +17,7 @@ min_node_count = 1
 max_node_count = 4
 
 # Application Configuration
-app_namespace = "mern-app"
+app_namespace = "hoel-booking"
 
 # Docker Images from Docker Hub
 backend_image = "marvelhelmy/hotel-server:latest"
@@ -28,3 +28,6 @@ mongodb_image = "mongo:7.0"
 mongodb_database = "ecommerce"
 backend_replicas = 1  # Changed from 2 to 1
 frontend_replicas = 1  # Changed from 2 to 1
+
+#Grafana Acess
+grafana_admin_password = "YourSecurePassword123!"
