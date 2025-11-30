@@ -1,6 +1,6 @@
 # AWS Configuration
 aws_region = "us-east-1"
-project_name = "mern-ecommerce"
+project_name = "hotel-booking"
 environment = "dev"
 
 # VPC Configuration
@@ -12,12 +12,12 @@ public_subnet_cidrs = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
 # EKS Configuration
 kubernetes_version = "1.28"
 node_instance_types = ["t3.small"]
-desired_node_count = 2  # Keep 2 nodes
+desired_node_count = 2 
 min_node_count = 1
 max_node_count = 4
 
 # Application Configuration
-app_namespace = "hoel-booking"
+app_namespace = "hoel-app"
 
 # Docker Images from Docker Hub
 backend_image = "marvelhelmy/hotel-server:latest"
@@ -25,9 +25,9 @@ frontend_image = "marvelhelmy/hotel-client:latest"
 mongodb_image = "mongo:7.0"
 
 # Application Settings
-mongodb_database = "ecommerce"
-backend_replicas = 1  # Changed from 2 to 1
-frontend_replicas = 1  # Changed from 2 to 1
+mongodb_database = "hotel_booking"
+backend_replicas = 1 
+frontend_replicas = 1 
 
 #Grafana Acess
 grafana_admin_password = "YourSecurePassword123!"
