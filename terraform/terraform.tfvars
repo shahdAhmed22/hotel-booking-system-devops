@@ -17,7 +17,7 @@ min_node_count = 1
 max_node_count = 4
 
 # Application Configuration
-app_namespace = "hoel-app"
+app_namespace = "hotel-app"
 
 # Docker Images from Docker Hub
 backend_image = "marvelhelmy/hotel-server:latest"
