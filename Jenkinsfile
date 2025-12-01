@@ -541,7 +541,7 @@ pipeline {
                             
                             echo.
                             echo Checking ServiceMonitors...
-                            kubectl get servicemonitor -n mern-app 2>nul || echo "ServiceMonitors not deployed"
+                            kubectl get servicemonitor -n hotel-app 2>nul || echo "ServiceMonitors not deployed"
                         '''
                     }
                 }
@@ -575,7 +575,7 @@ pipeline {
                 
                 if (params.PIPELINE_ACTION == 'terraform-apply' || params.PIPELINE_ACTION == 'terraform-clean-and-apply' || params.PIPELINE_ACTION == 'full-deploy') {
                     echo "🎉 DEPLOYMENT SUCCESSFUL! 🎉"
-                    echo "Get Application URL: kubectl get ingress -n mern-app"
+                    echo "Get Application URL: kubectl get ingress -n hotel-app"
                     echo "Get Grafana URL: kubectl get svc prometheus-grafana -n monitoring"
                 }
                 
