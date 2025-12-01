@@ -11,6 +11,8 @@ resource "kubernetes_config_map" "backend" {
     MONGODB_URI   = "mongodb://admin:${var.mongodb_root_password}@mongodb.${var.app_namespace}.svc.cluster.local:27017/${var.mongodb_database}?authSource=admin"
     DATABASE_NAME = var.mongodb_database
   }
+  
+  depends_on = [kubernetes_namespace.app]
 }
 
 # Backend Secret
@@ -25,6 +27,8 @@ resource "kubernetes_secret" "backend" {
   }
 
   type = "Opaque"
+  
+  depends_on = [kubernetes_namespace.app]
 }
 
 # Backend Deployment
@@ -144,6 +148,7 @@ resource "kubernetes_deployment" "backend" {
   }
 
   depends_on = [
+    kubernetes_namespace.app,
     kubernetes_service.mongodb,
     kubernetes_config_map.backend,
     kubernetes_secret.backend
@@ -181,8 +186,6 @@ resource "kubernetes_service" "backend" {
 
     type = "ClusterIP"
   }
-  depends_on = [kubernetes_deployment.backend]
-}
-
+  
   depends_on = [kubernetes_deployment.backend]
 }
