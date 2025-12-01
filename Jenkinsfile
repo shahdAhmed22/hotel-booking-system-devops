@@ -399,7 +399,7 @@ pipeline {
                             
                             REM Update kubeconfig
                             echo Updating kubeconfig...
-                            aws eks update-kubeconfig --region us-east-1 --name mern-ecommerce
+                            aws eks update-kubeconfig --region us-east-1 --name hotel-booking
                             
                             echo.
                             echo === Cluster Nodes ===
@@ -410,20 +410,20 @@ pipeline {
                             kubectl get namespaces
                             
                             echo.
-                            echo === Pods in mern-app ===
-                            kubectl get pods -n mern-app
+                            echo === Pods in hotel-app ===
+                            kubectl get pods -n hotel-app
                             
                             echo.
                             echo === Deployments ===
-                            kubectl get deployments -n mern-app
+                            kubectl get deployments -n hotel-app
                             
                             echo.
                             echo === Services ===
-                            kubectl get svc -n mern-app
+                            kubectl get svc -n hotel-app
                             
                             echo.
                             echo === Ingress ===
-                            kubectl get ingress -n mern-app
+                            kubectl get ingress -n hotel-app
                         '''
                     }
                 }
