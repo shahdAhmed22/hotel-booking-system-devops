@@ -13,7 +13,6 @@ resource "helm_release" "prometheus" {
   chart      = "kube-prometheus-stack"
   namespace  = kubernetes_namespace.monitoring.metadata[0].name
   version    = "55.0.0"
-
   values = [
     yamlencode({
       prometheus = {
@@ -161,10 +160,8 @@ resource "helm_release" "prometheus" {
       }
     })
   ]
-
   timeout = 900
   wait    = true
-
   depends_on = [
     kubernetes_namespace.monitoring,
     kubernetes_storage_class.ebs_sc,
@@ -175,16 +172,17 @@ resource "helm_release" "prometheus" {
 # Wait for Prometheus Operator CRDs to be ready
 resource "null_resource" "wait_for_prometheus_crds" {
   provisioner "local-exec" {
-    command = "powershell -Command \"Write-Host 'Waiting for Prometheus CRDs...'; Start-Sleep -Seconds 60\""
+    command     = "Write-Host 'Waiting for Prometheus CRDs...'; Start-Sleep -Seconds 60"
+    interpreter = ["PowerShell", "-Command"]
   }
   depends_on = [helm_release.prometheus]
 }
 
-# ServiceMonitor for Backend using kubectl
+# ServiceMonitor for Backend
 resource "null_resource" "backend_service_monitor" {
   provisioner "local-exec" {
     command = <<-EOT
-      kubectl apply -f - <<EOF
+      $yaml = @"
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -200,21 +198,22 @@ spec:
   - port: http
     interval: 30s
     path: /metrics
-EOF
+"@
+      $yaml | kubectl apply -f -
     EOT
+    interpreter = ["PowerShell", "-Command"]
   }
-
   depends_on = [
     null_resource.wait_for_prometheus_crds,
     kubernetes_service.backend
   ]
 }
 
-# ServiceMonitor for Frontend using kubectl
+# ServiceMonitor for Frontend
 resource "null_resource" "frontend_service_monitor" {
   provisioner "local-exec" {
     command = <<-EOT
-      kubectl apply -f - <<EOF
+      $yaml = @"
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -229,21 +228,22 @@ spec:
   endpoints:
   - port: http
     interval: 30s
-EOF
+"@
+      $yaml | kubectl apply -f -
     EOT
+    interpreter = ["PowerShell", "-Command"]
   }
-
   depends_on = [
     null_resource.wait_for_prometheus_crds,
     kubernetes_service.frontend
   ]
 }
 
-# ServiceMonitor for MongoDB using kubectl
+# ServiceMonitor for MongoDB
 resource "null_resource" "mongodb_service_monitor" {
   provisioner "local-exec" {
     command = <<-EOT
-      kubectl apply -f - <<EOF
+      $yaml = @"
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -258,10 +258,11 @@ spec:
   endpoints:
   - port: mongodb
     interval: 30s
-EOF
+"@
+      $yaml | kubectl apply -f -
     EOT
+    interpreter = ["PowerShell", "-Command"]
   }
-
   depends_on = [
     null_resource.wait_for_prometheus_crds,
     kubernetes_service.mongodb
@@ -277,7 +278,6 @@ resource "kubernetes_deployment" "mongodb_exporter" {
       app = "mongodb-exporter"
     }
   }
-
   spec {
     replicas = 1
     selector {
@@ -317,8 +317,10 @@ resource "kubernetes_deployment" "mongodb_exporter" {
       }
     }
   }
-
-  depends_on = [kubernetes_service.mongodb]
+  depends_on = [
+    kubernetes_namespace.app,
+    kubernetes_service.mongodb
+  ]
 }
 
 resource "kubernetes_service" "mongodb_exporter" {
@@ -329,7 +331,6 @@ resource "kubernetes_service" "mongodb_exporter" {
       app = "mongodb-exporter"
     }
   }
-
   spec {
     selector = {
       app = "mongodb-exporter"
@@ -341,7 +342,6 @@ resource "kubernetes_service" "mongodb_exporter" {
     }
     type = "ClusterIP"
   }
-
   depends_on = [kubernetes_deployment.mongodb_exporter]
 }
 
@@ -349,7 +349,7 @@ resource "kubernetes_service" "mongodb_exporter" {
 resource "null_resource" "mongodb_exporter_service_monitor" {
   provisioner "local-exec" {
     command = <<-EOT
-      kubectl apply -f - <<EOF
+      $yaml = @"
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
@@ -364,21 +364,22 @@ spec:
   endpoints:
   - port: metrics
     interval: 30s
-EOF
+"@
+      $yaml | kubectl apply -f -
     EOT
+    interpreter = ["PowerShell", "-Command"]
   }
-
   depends_on = [
     null_resource.wait_for_prometheus_crds,
     kubernetes_service.mongodb_exporter
   ]
 }
 
-# PrometheusRule for custom alerts using kubectl
+# PrometheusRule for custom alerts
 resource "null_resource" "custom_alerts" {
   provisioner "local-exec" {
     command = <<-EOT
-      kubectl apply -f - <<EOF
+      $yaml = @"
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
 metadata:
@@ -396,8 +397,8 @@ spec:
       labels:
         severity: critical
       annotations:
-        summary: "Pod {{ $$labels.pod }} is crash looping"
-        description: "Pod {{ $$labels.pod }} in namespace {{ $$labels.namespace }} has restarted {{ $$value }} times in the last 5 minutes"
+        summary: "Pod {{ `$labels.pod }} is crash looping"
+        description: "Pod {{ `$labels.pod }} in namespace {{ `$labels.namespace }} has restarted {{ `$value }} times in the last 5 minutes"
     - alert: HighMemoryUsage
       expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) > 0.9
       for: 5m
@@ -405,7 +406,7 @@ spec:
         severity: warning
       annotations:
         summary: "High memory usage detected"
-        description: "Container {{ $$labels.container }} in pod {{ $$labels.pod }} is using {{ $$value }} of memory limit"
+        description: "Container {{ `$labels.container }} in pod {{ `$labels.pod }} is using {{ `$value }} of memory limit"
     - alert: HighCPUUsage
       expr: (rate(container_cpu_usage_seconds_total[5m]) / container_spec_cpu_quota * 100) > 90
       for: 5m
@@ -413,7 +414,7 @@ spec:
         severity: warning
       annotations:
         summary: "High CPU usage detected"
-        description: "Container {{ $$labels.container }} in pod {{ $$labels.pod }} is using {{ $$value }}% of CPU limit"
+        description: "Container {{ `$labels.container }} in pod {{ `$labels.pod }} is using {{ `$value }}% of CPU limit"
     - alert: PodNotReady
       expr: kube_pod_status_phase{phase!="Running"} == 1
       for: 5m
@@ -421,7 +422,7 @@ spec:
         severity: warning
       annotations:
         summary: "Pod not ready"
-        description: "Pod {{ $$labels.pod }} in namespace {{ $$labels.namespace }} has been in {{ $$labels.phase }} phase for more than 5 minutes"
+        description: "Pod {{ `$labels.pod }} in namespace {{ `$labels.namespace }} has been in {{ `$labels.phase }} phase for more than 5 minutes"
     - alert: MongoDBDown
       expr: up{job="mongodb-exporter"} == 0
       for: 2m
@@ -437,11 +438,12 @@ spec:
         severity: critical
       annotations:
         summary: "Node disk pressure"
-        description: "Node {{ $$labels.node }} has disk pressure"
-EOF
+        description: "Node {{ `$labels.node }} has disk pressure"
+"@
+      $yaml | kubectl apply -f -
     EOT
+    interpreter = ["PowerShell", "-Command"]
   }
-
   depends_on = [null_resource.wait_for_prometheus_crds]
 }
 
