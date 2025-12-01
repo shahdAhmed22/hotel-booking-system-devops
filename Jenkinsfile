@@ -558,38 +558,40 @@ pipeline {
             }
         }
         
-        success {
-            script {
-                echo '✅✅✅ Pipeline completed successfully! ✅✅✅'
-                echo "================================================"
-                
-                if (params.PIPELINE_ACTION == 'docker-only') {
-                    echo "📦 Docker Images Pushed"
-                    echo "Client Image: ${CLIENT_IMAGE}:${IMAGE_TAG}"
-                    echo "Server Image: ${SERVER_IMAGE}:${IMAGE_TAG}"
-                }
-                
-                if (params.PIPELINE_ACTION == 'terraform-plan') {
-                    echo "📋 TERRAFORM PLAN COMPLETED"
-                }
-                
-                if (params.PIPELINE_ACTION == 'terraform-apply' || params.PIPELINE_ACTION == 'terraform-clean-and-apply' || params.PIPELINE_ACTION == 'full-deploy') {
-                    echo "🎉 DEPLOYMENT SUCCESSFUL! 🎉"
-                    echo "Get Application URL: kubectl get ingress -n hotel-app"
-                    echo "Get Grafana URL: kubectl get svc prometheus-grafana -n monitoring"
-                }
-                
-                if (params.PIPELINE_ACTION == 'terraform-destroy') {
-                    echo "🗑️ TERRAFORM DESTROY COMPLETED"
-                }
-                
-                echo "================================================"
-            }
+       success {
+    script {
+        echo '✅✅✅ Pipeline completed successfully! ✅✅✅'
+        echo "================================================"
+        
+        if (params.PIPELINE_ACTION == 'docker-only') {
+            echo "📦 Docker Images Pushed"
+            echo "Client Image: ${CLIENT_IMAGE}:${IMAGE_TAG}"
+            echo "Server Image: ${SERVER_IMAGE}:${IMAGE_TAG}"
         }
         
-        failure {
-            echo '❌❌❌ Pipeline FAILED! ❌❌❌'
-            echo 'Check the console output above for error details'
+        if (params.PIPELINE_ACTION == 'terraform-plan') {
+            echo "📋 TERRAFORM PLAN COMPLETED"
+        }
+        
+        if (params.PIPELINE_ACTION == 'terraform-apply' || params.PIPELINE_ACTION == 'terraform-clean-and-apply' || params.PIPELINE_ACTION == 'full-deploy') {
+            echo "🎉 DEPLOYMENT SUCCESSFUL! 🎉"
+            echo ""
+            echo "To get Frontend URL, run:"
+            echo "  kubectl get svc frontend -n hotel-app -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
+            echo ""
+            echo "To get Grafana URL, run:"
+            echo "  kubectl get svc prometheus-grafana -n monitoring -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'"
+            echo ""
+            echo "Or simply run:"
+            echo "  kubectl get svc -n hotel-app"
+            echo "  kubectl get svc -n monitoring"
+        }
+        
+        if (params.PIPELINE_ACTION == 'terraform-destroy') {
+            echo "🗑️ TERRAFORM DESTROY COMPLETED"
+        }
+        
+        echo "================================================"
         }
     }
 }
