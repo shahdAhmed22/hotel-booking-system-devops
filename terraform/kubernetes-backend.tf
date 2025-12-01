@@ -181,6 +181,8 @@ resource "kubernetes_service" "backend" {
 
     type = "ClusterIP"
   }
+  depends_on = [kubernetes_deployment.backend]
+}
 
   depends_on = [kubernetes_deployment.backend]
 }
