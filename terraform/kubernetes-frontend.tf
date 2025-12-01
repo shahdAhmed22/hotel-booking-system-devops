@@ -8,6 +8,7 @@ resource "kubernetes_config_map" "frontend" {
   data = {
     REACT_APP_API_URL = "http://backend.${var.app_namespace}.svc.cluster.local:5000/api"
   }
+  depends_on = [kubernetes_namespace.app]
 }
 
 # Frontend Deployment
