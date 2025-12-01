@@ -10,6 +10,7 @@ resource "kubernetes_secret" "mongodb" {
   }
 
   type = "Opaque"
+  depends_on = [kubernetes_namespace.app]
 }
 
 # MongoDB Deployment
