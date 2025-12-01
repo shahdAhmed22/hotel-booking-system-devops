@@ -114,7 +114,8 @@ resource "helm_release" "prometheus" {
         service = {
           type = "LoadBalancer"
           annotations = {
-            "service.beta.kubernetes.io/aws-load-balancer-type" = "classic"
+            "service.beta.kubernetes.io/aws-load-balancer-type" = "nlb"
+            "service.beta.kubernetes.io/aws-load-balancer-scheme" = "internet-facing"
           }
         }
       }
